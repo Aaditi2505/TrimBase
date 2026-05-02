@@ -508,7 +508,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("TrimBase Desktop - V 1.1.0")
+        self.setWindowTitle("TrimBase Desktop - V 1.1.1")
         self.setMinimumSize(1280, 720)
 
         self.central_widget = QWidget()
@@ -533,7 +533,9 @@ class MainWindow(QMainWindow):
         self.invert_mouse = True
         self.is_flattened = False
         self.internal_update = False
-        self.temp_dir = os.path.join(os.getcwd(), "temp_results")
+        # 🛑 Robust Temp Path for Batch
+        import tempfile
+        self.temp_dir = os.path.join(tempfile.gettempdir(), "TrimBase_Batch")
         if not os.path.exists(self.temp_dir):
             try: os.makedirs(self.temp_dir)
             except: pass
@@ -557,69 +559,12 @@ class MainWindow(QMainWindow):
 
 
     def update_workflow_state(self, step):
-        if step > self.current_workflow_step or step == 0:
-            self.current_workflow_step = step
-            self._refresh_highlights()
+        """Workflow highlighting removed as requested."""
+        pass
 
     def _refresh_highlights(self):
-        highlight_style = "background-color: #e6f0ff; border: 2px solid #0066ff; border-radius: 8px; color: #0066ff;"
-        nav_highlight_style = "background-color: #0066ff; color: white; border-radius: 5px; font-weight: bold;"
-        default_nav = ""
-        default_tool = ""
-        
-        if hasattr(self, 'btn_upload'): self.btn_upload.setStyleSheet(default_nav)
-        if hasattr(self, 'btn_download'): self.btn_download.setStyleSheet(default_nav)
-        if hasattr(self, 'tool_origin'): self.tool_origin.setStyleSheet(default_tool)
-        if hasattr(self, 'tool_face'): self.tool_face.setStyleSheet(default_tool)
-        if hasattr(self, 'tool_flatten'): self.tool_flatten.setStyleSheet(default_tool)
-        if hasattr(self, 'tool_precise'): self.tool_precise.setStyleSheet(default_tool)
-        if hasattr(self, 'tool_merge'): self.tool_merge.setStyleSheet(default_tool)
-        if hasattr(self, 'continue_btn'): self.continue_btn.setStyleSheet(default_tool)
-        
-        if hasattr(self, 'act_fixture'): self.act_fixture.setIcon(self.empty_icon)
-        if hasattr(self, 'act_single_stl'): self.act_single_stl.setIcon(self.empty_icon)
-        if hasattr(self, 'act_single_aligner'): self.act_single_aligner.setIcon(self.empty_icon)
-        if hasattr(self, 'act_batch_stl'): self.act_batch_stl.setIcon(self.empty_icon)
-        if hasattr(self, 'act_batch_aligner'): self.act_batch_aligner.setIcon(self.empty_icon)
-        if hasattr(self, 'act_save_stl'): self.act_save_stl.setIcon(self.empty_icon)
-        if hasattr(self, 'act_save_aligner'): self.act_save_aligner.setIcon(self.empty_icon)
-
-        step = self.current_workflow_step
-        
-        if step == 0:
-            if hasattr(self, 'btn_upload'): self.btn_upload.setStyleSheet(nav_highlight_style)
-            if hasattr(self, 'act_fixture'): self.act_fixture.setIcon(self.blue_icon)
-        elif step == 1:
-            if hasattr(self, 'btn_upload'): self.btn_upload.setStyleSheet(nav_highlight_style)
-            if hasattr(self, 'act_single_stl'): self.act_single_stl.setIcon(self.blue_icon)
-            if hasattr(self, 'act_batch_stl'): self.act_batch_stl.setIcon(self.blue_icon)
-        elif step == 2:
-            if hasattr(self, 'btn_upload'): self.btn_upload.setStyleSheet(nav_highlight_style)
-            if self.batch_mode:
-                if hasattr(self, 'act_batch_aligner'): self.act_batch_aligner.setIcon(self.blue_icon)
-            else:
-                if hasattr(self, 'act_single_aligner'): self.act_single_aligner.setIcon(self.blue_icon)
-        elif step == 3:
-            if hasattr(self, 'tool_origin'): self.tool_origin.setStyleSheet(highlight_style)
-        elif step == 4:
-            if hasattr(self, 'tool_face'): self.tool_face.setStyleSheet(highlight_style)
-        elif step == 5:
-            if hasattr(self, 'tool_flatten'): self.tool_flatten.setStyleSheet(highlight_style)
-        elif step == 6:
-            if hasattr(self, 'tool_precise'): self.tool_precise.setStyleSheet(highlight_style)
-        elif step == 7:
-            if hasattr(self, 'tool_merge'): self.tool_merge.setStyleSheet(highlight_style)
-        elif step == 8:
-            if self.batch_mode:
-                if hasattr(self, 'continue_btn'): self.continue_btn.setStyleSheet("background-color: #0066ff; color: white;")
-            else:
-                if hasattr(self, 'btn_download'): self.btn_download.setStyleSheet(nav_highlight_style)
-                if hasattr(self, 'act_save_stl'): self.act_save_stl.setIcon(self.blue_icon)
-                if hasattr(self, 'act_save_aligner'): self.act_save_aligner.setIcon(self.blue_icon)
-        elif step == 9:
-            if hasattr(self, 'btn_download'): self.btn_download.setStyleSheet(nav_highlight_style)
-            if hasattr(self, 'act_save_stl'): self.act_save_stl.setIcon(self.blue_icon)
-            if hasattr(self, 'act_save_aligner'): self.act_save_aligner.setIcon(self.blue_icon)
+        """Workflow highlighting removed as requested."""
+        pass
 
     def create_colored_icon(self, char, color="#4a5568", size=64):
         pixmap = QPixmap(size, size)
@@ -1521,14 +1466,16 @@ class MainWindow(QMainWindow):
 
     def _show_view_model(self):
         """Safe view transition to prevent crashes."""
-        if not self.processed_results or self.current_view_index >= len(self.processed_results):
+        if self.current_view_index >= len(self.processed_results):
             return
             
         path = self.processed_results[self.current_view_index]
         if not path or not os.path.exists(path):
             return
 
-        # 🛑 CRITICAL STABILITY: Clear everything before loading new geometry
+        # 🛑 STOP TIMER: Prevent rendering crash during geometry change
+        self.viewer.timer.stop()
+
         if self.viewer.part:
             try: self.viewer.vis.remove_geometry(self.viewer.part)
             except: pass
@@ -1536,29 +1483,21 @@ class MainWindow(QMainWindow):
             try: self.viewer.vis.remove_geometry(self.viewer.aligner)
             except: pass
             
-        # Re-load into viewer
         self.viewer.load_part(path)
-        self.part_lbl.setText(f"PROCESSED {self.current_view_index + 1}/{len(self.stl_files)}")
         
-        # Load aligner if exists
         if self.current_view_index < len(self.aligner_results):
             a_path = self.aligner_results[self.current_view_index]
             if a_path and os.path.exists(a_path):
                 self.viewer.load_aligner(a_path)
 
-        # Disable editing UI for processed results
-        self.tool_merge.setEnabled(False)
-        self.tool_flatten.setEnabled(False)
-        self.tool_face.setEnabled(False)
         self.show_view_model_controls(True)
         self.status_label.setText(f"VIEWING RESULT: {os.path.basename(path)}")
         self.batch_list.setCurrentRow(self.current_view_index)
         
-        # Final Force Refresh
+        # 🚀 START TIMER: Resume rendering safely
         self.viewer.vis.poll_events()
         self.viewer.vis.update_renderer()
-
-        self.status_label.setText(f"VIEWING RESULT: {os.path.basename(model_path)}")
+        self.viewer.timer.start(16)
         
         # Sync the list selection without triggering recursive calls
         self.batch_list.blockSignals(True)
