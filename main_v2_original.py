@@ -1649,64 +1649,55 @@ class MainWindow(QMainWindow):
             self.status_label.setText("SELECT MODE OFF")
 
     def update_part_transform(self):
-        if self.internal_update:
-            return
-            
-        if not self.viewer.part:
+        if self.internal_update or not self.viewer.part:
             return
 
-        # For sliders, we save state when they START moving or on a timer? 
-        # Better to save before the first movement in a sequence.
-        if self.undo_stack and len(self.undo_stack) > 0:
-             # Check if last op was a slider, if not, save state
-             if self.operation_history and self.operation_history[-1]['type'] != 'slider_transform':
-                 self.save_undo_state()
-        else:
-             self.save_undo_state()
-
-        mesh = self.viewer.part
-        # Rotate around the model's own center for "Precision" mode
-        pivot = mesh.get_center()
+        # 1. Get current values
+        rz_deg = self.rot_z.value()
+        rz_rad = np.deg2rad(rz_deg)
+        tx = self.tx.value() / 10.0
+        ty = self.ty.value() / 10.0
+        
+        # 2. Start from Baseline (updated after flatten or load)
         vertices = self.viewer.original_vertices.copy()
-
-        rz = np.deg2rad(self.rot_z.value())
+        pivot = np.mean(vertices, axis=0) # Pivot around the model center
+        
+        # 3. Rotation Matrix
         Rz = np.array([
-            [np.cos(rz), -np.sin(rz), 0],
-            [np.sin(rz),  np.cos(rz), 0],
+            [np.cos(rz_rad), -np.sin(rz_rad), 0],
+            [np.sin(rz_rad),  np.cos(rz_rad), 0],
             [0, 0, 1]
         ])
 
-        # Rotate relative to pivot
-        vertices = (vertices - pivot) @ Rz.T + pivot
-
-        tx = self.tx.value() / 10.0
-        ty = self.ty.value() / 10.0
-        tz = 0.0
-
-        vertices[:, 0] += tx
-        vertices[:, 1] += ty
-        vertices[:, 2] += tz
+        # 4. Apply Rotation around pivot
+        new_vertices = (vertices - pivot) @ Rz.T + pivot
         
-        self.record_operation({'type': 'slider_transform', 'tx': tx, 'ty': ty, 'rz': rz})
-
-        mesh.vertices = o3d.utility.Vector3dVector(vertices)
-        mesh.compute_vertex_normals()
-        self.viewer.vis.update_geometry(mesh)
-
+        # 5. Apply Translation
+        new_vertices[:, 0] += tx
+        new_vertices[:, 1] += ty
+        
+        # 6. Apply to Mesh
+        self.viewer.part.vertices = o3d.utility.Vector3dVector(new_vertices)
+        self.viewer.part.compute_vertex_normals()
+        self.viewer.vis.update_geometry(self.viewer.part)
+        
+        # 7. Sync Aligner
         if self.viewer.aligner:
             a_vertices = self.viewer.original_aligner_vertices.copy()
-            a_vertices = a_vertices @ Rz.T
-            a_vertices[:, 0] += tx
-            a_vertices[:, 1] += ty
-            a_vertices[:, 2] += tz
-            self.viewer.aligner.vertices = o3d.utility.Vector3dVector(a_vertices)
+            new_a_vertices = (a_vertices - pivot) @ Rz.T + pivot
+            new_a_vertices[:, 0] += tx
+            new_a_vertices[:, 1] += ty
+            self.viewer.aligner.vertices = o3d.utility.Vector3dVector(new_a_vertices)
             self.viewer.aligner.compute_vertex_normals()
             self.viewer.vis.update_geometry(self.viewer.aligner)
 
+        self.record_operation({'type': 'slider_transform', 'tx': tx, 'ty': ty, 'rz': rz_rad})
         self.viewer.update_part_center_marker()
-        self.status_label.setText(f"PART OFFSET: {tx:.1f}, {ty:.1f}, {tz:.1f}")
-
-        center = mesh.get_center()
+        
+        # Force the UI to show the change
+        self.status_label.setText(f"PRECISION ROTATION: {rz_deg}° | OFFSET: {tx:.1f}, {ty:.1f}")
+        
+        center = self.viewer.part.get_center()
         self.pos_readout.setText(f"X: {center[0]:.1f}, Y: {center[1]:.1f}, Z: {center[2]:.1f}")
 
 
