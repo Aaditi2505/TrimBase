@@ -1512,50 +1512,45 @@ class MainWindow(QMainWindow):
         self._show_view_model()
 
     def _show_view_model(self):
-        path = self.processed_results[self.current_view_index]
-        
-        # CLEAR VIEWER COMPLETELY BEFORE SHOWING RESULT
-        if self.viewer.part:
-            try: self.viewer.vis.remove_geometry(self.viewer.part)
-            except: pass
-        if self.viewer.fixture:
-            try: self.viewer.vis.remove_geometry(self.viewer.fixture)
-            except: pass
-            
-        self.viewer.load_part(path)
-
-        # Disable editing
-        self._set_sliders_enabled(False)
         """Loads the processed model and aligner for the current index into the viewer."""
-        if self.current_view_index < len(self.processed_results):
-            model_path = self.processed_results[self.current_view_index]
-            if model_path and os.path.exists(model_path):
-                self.viewer.load_part(model_path)
-                self.part_lbl.setText(f"PROCESSED {self.current_view_index + 1}/{len(self.stl_files)}")
-                
-                # ALSO LOAD THE MATCHING PROCESSED ALIGNER
-                if self.current_view_index < len(self.aligner_results):
-                    aligner_path = self.aligner_results[self.current_view_index]
-                    if aligner_path and os.path.exists(aligner_path):
-                        self.viewer.load_aligner(aligner_path)
-                    else:
-                        # Clear old aligner if this result doesn't have one
-                        if self.viewer.aligner:
-                            try: self.viewer.vis.remove_geometry(self.viewer.aligner)
-                            except: pass
-                            self.viewer.aligner = None
-                else:
-                    # Clear old aligner
-                    if self.viewer.aligner:
-                        try: self.viewer.vis.remove_geometry(self.viewer.aligner)
-                        except: pass
-                        self.viewer.aligner = None
-                        
-                self.tool_merge.setEnabled(False)
-                self.tool_flatten.setEnabled(False)
-                # Navigation handled via list
-                self.status_label.setText(f"VIEWING RESULT: {os.path.basename(model_path)}")
+        if self.current_view_index >= len(self.processed_results):
+            return
+
+        model_path = self.processed_results[self.current_view_index]
+        if not model_path or not os.path.exists(model_path):
+            self.status_label.setText(f"FILE NOT FOUND: {os.path.basename(model_path) if model_path else 'Unknown'}")
+            return
+
+        # 1. Load the Model
+        self.viewer.load_part(model_path)
+        self.part_lbl.setText(f"PROCESSED {self.current_view_index + 1}/{len(self.stl_files)}")
+        self._set_sliders_enabled(False)
+        self.tool_merge.setEnabled(False)
+        self.tool_flatten.setEnabled(False)
+        self.tool_face.setEnabled(False)
+
+        # 2. Load the Aligner if it exists
+        if self.current_view_index < len(self.aligner_results):
+            aligner_path = self.aligner_results[self.current_view_index]
+            if aligner_path and os.path.exists(aligner_path):
+                self.viewer.load_aligner(aligner_path)
+            else:
+                if self.viewer.aligner:
+                    try: self.viewer.vis.remove_geometry(self.viewer.aligner)
+                    except: pass
+                    self.viewer.aligner = None
+        else:
+            if self.viewer.aligner:
+                try: self.viewer.vis.remove_geometry(self.viewer.aligner)
+                except: pass
+                self.viewer.aligner = None
+
+        self.status_label.setText(f"VIEWING RESULT: {os.path.basename(model_path)}")
+        
+        # Sync the list selection without triggering recursive calls
+        self.batch_list.blockSignals(True)
         self.batch_list.setCurrentRow(self.current_view_index)
+        self.batch_list.blockSignals(False)
         
     def store_transform_values(self):
         self.saved_transform["tx"] = self.tx.value() / 10.0
@@ -1657,7 +1652,7 @@ class MainWindow(QMainWindow):
         if self.internal_update:
             return
             
-        if not self.viewer.part or self.is_flattened:
+        if not self.viewer.part:
             return
 
         # For sliders, we save state when they START moving or on a timer? 
@@ -2357,7 +2352,9 @@ class MainWindow(QMainWindow):
         self.status_label.setText(f"RENDER MODE: {mode.upper()}")
 
 if __name__ == "__main__":
-    app = QApplication(sys.argv)
+    app = QApplication.instance()
+    if not app:
+        app = QApplication(sys.argv)
     window = MainWindow()
     window.show()
     sys.exit(app.exec())
