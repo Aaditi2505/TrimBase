@@ -508,7 +508,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("TrimBase Desktop - V 1.0.5")
+        self.setWindowTitle("TrimBase Desktop - V 1.0.6")
         self.setMinimumSize(1280, 720)
 
         self.central_widget = QWidget()
@@ -1652,33 +1652,35 @@ class MainWindow(QMainWindow):
         if self.internal_update or not self.viewer.part:
             return
 
-        # 1. Get current absolute rotation from slider
-        rz_deg = self.rot_z.value()
+        # 1. Calculate delta rotation (Change since last movement)
+        new_val = self.rot_z.value()
+        old_val = getattr(self, "last_slider_val", 0)
+        delta = new_val - old_val
+        self.last_slider_val = new_val
         
-        # 2. Reset mesh to the "Flattened" or "Loaded" baseline
-        self.viewer.part.vertices = o3d.utility.Vector3dVector(self.viewer.original_vertices)
-        
-        # 3. Apply the absolute rotation to the baseline
-        # Use the baseline's center as pivot for perfect rotation
+        if delta == 0:
+            return
+
+        # 2. Apply incremental rotation (Exactly like the mouse logic)
         pivot = self.viewer.part.get_center()
-        R = self.viewer.part.get_rotation_matrix_from_xyz((0, 0, np.deg2rad(rz_deg)))
+        R = self.viewer.part.get_rotation_matrix_from_xyz((0, 0, np.deg2rad(delta)))
+        
         self.viewer.part.rotate(R, center=pivot)
         
-        # 4. Apply to Visualizer
+        # 3. Apply to Visualizer
         self.viewer.part.compute_vertex_normals()
         self.viewer.vis.update_geometry(self.viewer.part)
         
-        # 5. Sync Aligner if exists
+        # 4. Sync Aligner if exists
         if self.viewer.aligner:
-            self.viewer.aligner.vertices = o3d.utility.Vector3dVector(self.viewer.original_aligner_vertices)
             self.viewer.aligner.rotate(R, center=pivot)
             self.viewer.aligner.compute_vertex_normals()
             self.viewer.vis.update_geometry(self.viewer.aligner)
 
-        self.record_operation({'type': 'slider_transform', 'tx': 0, 'ty': 0, 'rz': np.deg2rad(rz_deg)})
+        self.record_operation({'type': 'rotate', 'matrix': R, 'center': pivot})
         self.viewer.update_part_center_marker()
         
-        self.status_label.setText(f"V1.0.5 | PRECISION ROTATION: {rz_deg}°")
+        self.status_label.setText(f"V1.0.6 | MOUSE-STYLE ROTATION: {new_val}° (Δ {delta})")
         center = self.viewer.part.get_center()
         self.pos_readout.setText(f"X: {center[0]:.1f}, Y: {center[1]:.1f}, Z: {center[2]:.1f}")
 
@@ -1780,6 +1782,7 @@ class MainWindow(QMainWindow):
         self.internal_update = False
 
         self.is_flattened = True
+        self.last_slider_val = 0
         self.tool_precise.setEnabled(True)
 
         self.status_label.setText("MODEL FLATTENED (FIXED POSITION)")
