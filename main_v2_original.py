@@ -508,7 +508,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("Fixture Desktop")
+        self.setWindowTitle("TrimBase Desktop - V 1.0.5")
         self.setMinimumSize(1280, 720)
 
         self.central_widget = QWidget()
@@ -1652,51 +1652,33 @@ class MainWindow(QMainWindow):
         if self.internal_update or not self.viewer.part:
             return
 
-        # 1. Get current values
+        # 1. Get current absolute rotation from slider
         rz_deg = self.rot_z.value()
-        rz_rad = np.deg2rad(rz_deg)
-        tx = self.tx.value() / 10.0
-        ty = self.ty.value() / 10.0
         
-        # 2. Start from Baseline (updated after flatten or load)
-        vertices = self.viewer.original_vertices.copy()
-        pivot = np.mean(vertices, axis=0) # Pivot around the model center
+        # 2. Reset mesh to the "Flattened" or "Loaded" baseline
+        self.viewer.part.vertices = o3d.utility.Vector3dVector(self.viewer.original_vertices)
         
-        # 3. Rotation Matrix
-        Rz = np.array([
-            [np.cos(rz_rad), -np.sin(rz_rad), 0],
-            [np.sin(rz_rad),  np.cos(rz_rad), 0],
-            [0, 0, 1]
-        ])
-
-        # 4. Apply Rotation around pivot
-        new_vertices = (vertices - pivot) @ Rz.T + pivot
+        # 3. Apply the absolute rotation to the baseline
+        # Use the baseline's center as pivot for perfect rotation
+        pivot = self.viewer.part.get_center()
+        R = self.viewer.part.get_rotation_matrix_from_xyz((0, 0, np.deg2rad(rz_deg)))
+        self.viewer.part.rotate(R, center=pivot)
         
-        # 5. Apply Translation
-        new_vertices[:, 0] += tx
-        new_vertices[:, 1] += ty
-        
-        # 6. Apply to Mesh
-        self.viewer.part.vertices = o3d.utility.Vector3dVector(new_vertices)
+        # 4. Apply to Visualizer
         self.viewer.part.compute_vertex_normals()
         self.viewer.vis.update_geometry(self.viewer.part)
         
-        # 7. Sync Aligner
+        # 5. Sync Aligner if exists
         if self.viewer.aligner:
-            a_vertices = self.viewer.original_aligner_vertices.copy()
-            new_a_vertices = (a_vertices - pivot) @ Rz.T + pivot
-            new_a_vertices[:, 0] += tx
-            new_a_vertices[:, 1] += ty
-            self.viewer.aligner.vertices = o3d.utility.Vector3dVector(new_a_vertices)
+            self.viewer.aligner.vertices = o3d.utility.Vector3dVector(self.viewer.original_aligner_vertices)
+            self.viewer.aligner.rotate(R, center=pivot)
             self.viewer.aligner.compute_vertex_normals()
             self.viewer.vis.update_geometry(self.viewer.aligner)
 
-        self.record_operation({'type': 'slider_transform', 'tx': tx, 'ty': ty, 'rz': rz_rad})
+        self.record_operation({'type': 'slider_transform', 'tx': 0, 'ty': 0, 'rz': np.deg2rad(rz_deg)})
         self.viewer.update_part_center_marker()
         
-        # Force the UI to show the change
-        self.status_label.setText(f"PRECISION ROTATION: {rz_deg}° | OFFSET: {tx:.1f}, {ty:.1f}")
-        
+        self.status_label.setText(f"V1.0.5 | PRECISION ROTATION: {rz_deg}°")
         center = self.viewer.part.get_center()
         self.pos_readout.setText(f"X: {center[0]:.1f}, Y: {center[1]:.1f}, Z: {center[2]:.1f}")
 
