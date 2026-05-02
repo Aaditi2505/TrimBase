@@ -508,7 +508,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("TrimBase Desktop - V 1.0.9")
+        self.setWindowTitle("TrimBase Desktop - V 1.1.0")
         self.setMinimumSize(1280, 720)
 
         self.central_widget = QWidget()
@@ -533,6 +533,10 @@ class MainWindow(QMainWindow):
         self.invert_mouse = True
         self.is_flattened = False
         self.internal_update = False
+        self.temp_dir = os.path.join(os.getcwd(), "temp_results")
+        if not os.path.exists(self.temp_dir):
+            try: os.makedirs(self.temp_dir)
+            except: pass
         
         # --- WORKFLOW HIGHLIGHTING ---
         pix = QPixmap(12, 12)
@@ -1040,6 +1044,11 @@ class MainWindow(QMainWindow):
         m_lbl = "PART: MOVABLE" + (" (BATCH)" if len(self.stl_files) > 1 else "")
         self.part_lbl.setText(m_lbl)
         
+        # Safety: Ensure fixture is added only once
+        if self.viewer.fixture:
+            try: self.viewer.vis.add_geometry(self.viewer.fixture)
+            except: pass
+        
         # Update Stats
         if self.viewer.part:
             self.v_stats.setText(f"{len(self.viewer.part.vertices):,}")
@@ -1453,16 +1462,15 @@ class MainWindow(QMainWindow):
                         mesh = merged
                         mesh.compute_vertex_normals()
                 
-                # E. Save Results
-                # Save Model (Merged if merge was in history)
+                # E. Save Results to TEMP FOLDER (Keep original folder clean!)
                 output_name = os.path.basename(file_path).lower().replace(".stl", "_batch_aligned.stl")
-                output_path = os.path.join(os.path.dirname(file_path), output_name)
+                output_path = os.path.join(self.temp_dir, output_name)
                 o3d.io.write_triangle_mesh(output_path, mesh)
                 
-                # Save Aligner if exists (Separate file)
+                # Save Aligner to temp
                 if aligner_mesh:
                     a_name = os.path.basename(aligner_path).lower().replace(".stl", "_batch_aligned.stl")
-                    aligner_out = os.path.join(os.path.dirname(aligner_path), a_name)
+                    aligner_out = os.path.join(self.temp_dir, a_name)
                     o3d.io.write_triangle_mesh(aligner_out, aligner_mesh)
                     
                     while len(self.aligner_results) <= i:
@@ -1512,38 +1520,43 @@ class MainWindow(QMainWindow):
         self._show_view_model()
 
     def _show_view_model(self):
-        """Loads the processed model and aligner for the current index into the viewer."""
-        if self.current_view_index >= len(self.processed_results):
+        """Safe view transition to prevent crashes."""
+        if not self.processed_results or self.current_view_index >= len(self.processed_results):
+            return
+            
+        path = self.processed_results[self.current_view_index]
+        if not path or not os.path.exists(path):
             return
 
-        model_path = self.processed_results[self.current_view_index]
-        if not model_path or not os.path.exists(model_path):
-            self.status_label.setText(f"FILE NOT FOUND: {os.path.basename(model_path) if model_path else 'Unknown'}")
-            return
-
-        # 1. Load the Model
-        self.viewer.load_part(model_path)
+        # 🛑 CRITICAL STABILITY: Clear everything before loading new geometry
+        if self.viewer.part:
+            try: self.viewer.vis.remove_geometry(self.viewer.part)
+            except: pass
+        if self.viewer.aligner:
+            try: self.viewer.vis.remove_geometry(self.viewer.aligner)
+            except: pass
+            
+        # Re-load into viewer
+        self.viewer.load_part(path)
         self.part_lbl.setText(f"PROCESSED {self.current_view_index + 1}/{len(self.stl_files)}")
-        self._set_sliders_enabled(False)
+        
+        # Load aligner if exists
+        if self.current_view_index < len(self.aligner_results):
+            a_path = self.aligner_results[self.current_view_index]
+            if a_path and os.path.exists(a_path):
+                self.viewer.load_aligner(a_path)
+
+        # Disable editing UI for processed results
         self.tool_merge.setEnabled(False)
         self.tool_flatten.setEnabled(False)
         self.tool_face.setEnabled(False)
-
-        # 2. Load the Aligner if it exists
-        if self.current_view_index < len(self.aligner_results):
-            aligner_path = self.aligner_results[self.current_view_index]
-            if aligner_path and os.path.exists(aligner_path):
-                self.viewer.load_aligner(aligner_path)
-            else:
-                if self.viewer.aligner:
-                    try: self.viewer.vis.remove_geometry(self.viewer.aligner)
-                    except: pass
-                    self.viewer.aligner = None
-        else:
-            if self.viewer.aligner:
-                try: self.viewer.vis.remove_geometry(self.viewer.aligner)
-                except: pass
-                self.viewer.aligner = None
+        self.show_view_model_controls(True)
+        self.status_label.setText(f"VIEWING RESULT: {os.path.basename(path)}")
+        self.batch_list.setCurrentRow(self.current_view_index)
+        
+        # Final Force Refresh
+        self.viewer.vis.poll_events()
+        self.viewer.vis.update_renderer()
 
         self.status_label.setText(f"VIEWING RESULT: {os.path.basename(model_path)}")
         
