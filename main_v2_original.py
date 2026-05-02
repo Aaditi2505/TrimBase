@@ -1665,17 +1665,19 @@ class MainWindow(QMainWindow):
              self.save_undo_state()
 
         mesh = self.viewer.part
+        # Rotate around the model's own center for "Precision" mode
+        pivot = mesh.get_center()
         vertices = self.viewer.original_vertices.copy()
 
         rz = np.deg2rad(self.rot_z.value())
-
         Rz = np.array([
             [np.cos(rz), -np.sin(rz), 0],
             [np.sin(rz),  np.cos(rz), 0],
             [0, 0, 1]
         ])
 
-        vertices = vertices @ Rz.T
+        # Rotate relative to pivot
+        vertices = (vertices - pivot) @ Rz.T + pivot
 
         tx = self.tx.value() / 10.0
         ty = self.ty.value() / 10.0
