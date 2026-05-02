@@ -508,7 +508,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("TrimBase Desktop - V 1.0.6")
+        self.setWindowTitle("TrimBase Desktop - V 1.0.7")
         self.setMinimumSize(1280, 720)
 
         self.central_widget = QWidget()
@@ -1652,7 +1652,7 @@ class MainWindow(QMainWindow):
         if self.internal_update or not self.viewer.part:
             return
 
-        # 1. Calculate delta rotation (Change since last movement)
+        # 1. Get current values
         new_val = self.rot_z.value()
         old_val = getattr(self, "last_slider_val", 0)
         delta = new_val - old_val
@@ -1661,26 +1661,25 @@ class MainWindow(QMainWindow):
         if delta == 0:
             return
 
-        # 2. Apply incremental rotation (Exactly like the mouse logic)
+        # 2. Use a fixed pivot (the center of the mesh at the start of rotation)
         pivot = self.viewer.part.get_center()
-        R = self.viewer.part.get_rotation_matrix_from_xyz((0, 0, np.deg2rad(delta)))
         
+        # 3. Direct Rotation (Same as mouse)
+        R = self.viewer.part.get_rotation_matrix_from_xyz((0, 0, np.deg2rad(delta)))
         self.viewer.part.rotate(R, center=pivot)
         
-        # 3. Apply to Visualizer
-        self.viewer.part.compute_vertex_normals()
-        self.viewer.vis.update_geometry(self.viewer.part)
-        
-        # 4. Sync Aligner if exists
+        # 4. Sync Aligner
         if self.viewer.aligner:
             self.viewer.aligner.rotate(R, center=pivot)
-            self.viewer.aligner.compute_vertex_normals()
             self.viewer.vis.update_geometry(self.viewer.aligner)
 
-        self.record_operation({'type': 'rotate', 'matrix': R, 'center': pivot})
+        # 5. FORCE REFRESH EVERYTHING
+        self.viewer.vis.update_geometry(self.viewer.part)
+        self.viewer.vis.poll_events()
+        self.viewer.vis.update_renderer()
         self.viewer.update_part_center_marker()
         
-        self.status_label.setText(f"V1.0.6 | MOUSE-STYLE ROTATION: {new_val}° (Δ {delta})")
+        self.status_label.setText(f"V1.0.7 | ROTATING: {new_val}° (Δ {delta})")
         center = self.viewer.part.get_center()
         self.pos_readout.setText(f"X: {center[0]:.1f}, Y: {center[1]:.1f}, Z: {center[2]:.1f}")
 
