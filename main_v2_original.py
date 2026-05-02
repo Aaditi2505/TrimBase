@@ -508,7 +508,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
 
-        self.setWindowTitle("TrimBase Desktop - V 1.0.7")
+        self.setWindowTitle("TrimBase Desktop - V 1.0.9")
         self.setMinimumSize(1280, 720)
 
         self.central_widget = QWidget()
@@ -1652,35 +1652,51 @@ class MainWindow(QMainWindow):
         if self.internal_update or not self.viewer.part:
             return
 
-        # 1. Get current values
-        new_val = self.rot_z.value()
-        old_val = getattr(self, "last_slider_val", 0)
-        delta = new_val - old_val
-        self.last_slider_val = new_val
-        
-        if delta == 0:
-            return
+        # 🚀 RESTORED GOLDEN ABSOLUTE MATH (No Lock)
+        mesh = self.viewer.part
+        vertices = self.viewer.original_vertices.copy()
 
-        # 2. Use a fixed pivot (the center of the mesh at the start of rotation)
-        pivot = self.viewer.part.get_center()
+        rz = np.deg2rad(self.rot_z.value())
+
+        Rz = np.array([
+            [np.cos(rz), -np.sin(rz), 0],
+            [np.sin(rz),  np.cos(rz), 0],
+            [0, 0, 1]
+        ])
+
+        # Exact user math:
+        vertices = vertices @ Rz.T
+
+        tx = self.tx.value() / 10.0
+        ty = self.ty.value() / 10.0
+        tz = 0.0
+
+        vertices[:, 0] += tx
+        vertices[:, 1] += ty
+        vertices[:, 2] += tz
         
-        # 3. Direct Rotation (Same as mouse)
-        R = self.viewer.part.get_rotation_matrix_from_xyz((0, 0, np.deg2rad(delta)))
-        self.viewer.part.rotate(R, center=pivot)
+        self.record_operation({'type': 'slider_transform', 'tx': tx, 'ty': ty, 'rz': rz})
+
+        mesh.vertices = o3d.utility.Vector3dVector(vertices)
+        mesh.compute_vertex_normals()
+        self.viewer.vis.update_geometry(mesh)
         
-        # 4. Sync Aligner
         if self.viewer.aligner:
-            self.viewer.aligner.rotate(R, center=pivot)
+            a_vertices = self.viewer.original_aligner_vertices.copy()
+            a_vertices = a_vertices @ Rz.T
+            a_vertices[:, 0] += tx
+            a_vertices[:, 1] += ty
+            a_vertices[:, 2] += tz
+            self.viewer.aligner.vertices = o3d.utility.Vector3dVector(a_vertices)
+            self.viewer.aligner.compute_vertex_normals()
             self.viewer.vis.update_geometry(self.viewer.aligner)
 
-        # 5. FORCE REFRESH EVERYTHING
-        self.viewer.vis.update_geometry(self.viewer.part)
         self.viewer.vis.poll_events()
         self.viewer.vis.update_renderer()
         self.viewer.update_part_center_marker()
         
-        self.status_label.setText(f"V1.0.7 | ROTATING: {new_val}° (Δ {delta})")
-        center = self.viewer.part.get_center()
+        self.status_label.setText(f"V1.0.9 | ABSOLUTE ROTATION: {self.rot_z.value()}°")
+        center = mesh.get_center()
         self.pos_readout.setText(f"X: {center[0]:.1f}, Y: {center[1]:.1f}, Z: {center[2]:.1f}")
 
 
@@ -1786,6 +1802,12 @@ class MainWindow(QMainWindow):
 
         self.status_label.setText("MODEL FLATTENED (FIXED POSITION)")
         self.toggle_transform_mode(False) 
+        self.toggle_select_mode() # Turn off face selection if on
+        
+        # FORCE RE-ADD TO VIEWER TO UNLOCK RENDERING
+        self.viewer.vis.remove_geometry(mesh)
+        self.viewer.vis.add_geometry(mesh)
+        
         self.update_workflow_state(6)
         self.record_operation({
             'type': 'flatten', 
